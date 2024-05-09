@@ -1,14 +1,11 @@
 package com.apirest.springsecuritydemo6.configuration;
 
-import static org.springframework.security.config.Customizer.withDefaults;
-
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configurers.oauth2.server.resource.OAuth2ResourceServerConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -17,6 +14,8 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
 
 import com.apirest.springsecuritydemo6.utils.RSAKeyProperties;
@@ -42,24 +41,31 @@ public class SecurityConfiguration {
     }
 
     @Bean
-    public AuthenticationManager authManager(UserDetailsService detailsService) {
+    public AuthenticationManager authManager(UserDetailsService detailsService){
         DaoAuthenticationProvider daoProvider = new DaoAuthenticationProvider();
         daoProvider.setUserDetailsService(detailsService);
+        daoProvider.setPasswordEncoder(passwordEncoder());
         return new ProviderManager(daoProvider);
     }
 
     @SuppressWarnings("removal")
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        return http
-                .csrf(csrf -> csrf.disable())
-                .authorizeHttpRequests(auth -> {
-                    auth.requestMatchers("/auth/**").permitAll();
-                    auth.anyRequest().authenticated();
-                })
-                .oauth2ResourceServer(OAuth2ResourceServerConfigurer::jwt)
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .build();
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception{
+        http
+            .csrf(csrf -> csrf.disable())
+            .authorizeHttpRequests(auth -> {
+                auth.requestMatchers("/auth/**").permitAll();
+                auth.requestMatchers("/admin/**").hasRole("ADMIN");
+                auth.requestMatchers("/user/**").hasAnyRole("ADMIN", "USER");
+                auth.anyRequest().authenticated();
+            });
+            
+        http.oauth2ResourceServer()
+                .jwt()
+                .jwtAuthenticationConverter(jwtAuthenticationConverter());
+        http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+                
+        return http.build();
     }
 
     /*Este método é responsável por validar e decodificar os tokens JWT recebidos, verificando a assinatura digital com a chave pública.*/
@@ -81,5 +87,19 @@ public class SecurityConfiguration {
      * jwtEncoder() é responsável por codificar e assinar tokens JWT, enquanto o método jwtDecoder() é utilizado para decodificar e validar tokens 
      * JWT. Ambos os métodos são essenciais para a manipulação segura e eficiente de tokens JWT em uma aplicação Spring.
      * */
+
+
+    /*Esse método é responsável por configurar o JwtAuthenticationConverter para que ele possa extrair as autoridades (roles) do token JWT e 
+     * convertê-las em um objeto de autenticação que pode ser utilizado pela aplicação.
+     * */
+    @Bean
+    public JwtAuthenticationConverter jwtAuthenticationConverter(){
+        JwtGrantedAuthoritiesConverter jwtGrantedAuthoritiesConverter = new JwtGrantedAuthoritiesConverter();   // Cria uma instância de JwtGrantedAuthoritiesConverter
+        jwtGrantedAuthoritiesConverter.setAuthoritiesClaimName("roles");                   // Define o nome da reivindicação (claim) que contém as autoridades (roles)
+        jwtGrantedAuthoritiesConverter.setAuthorityPrefix("ROLE_");                             // Define o prefixo a ser adicionado às autoridades (roles)
+        JwtAuthenticationConverter jwtConverter = new JwtAuthenticationConverter();                             // Cria uma instância de JwtAuthenticationConverter
+        jwtConverter.setJwtGrantedAuthoritiesConverter(jwtGrantedAuthoritiesConverter);                         // Retorna o JwtAuthenticationConverter configurado
+        return jwtConverter;
+    }
 
 }
